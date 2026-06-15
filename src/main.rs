@@ -75,9 +75,8 @@ fn main() -> Result<()> {
     println!("\nsent      T : {:?}", String::from_utf8_lossy(payload));
     println!("recovered T : {:?}", String::from_utf8_lossy(&bytes));
 
-    let same = bytes == payload;
-    println!("data matches original? {same}");
-    println!("rebuilt the transaction list from only {data_shards} of {total} shreds");
+    assert_eq!(bytes, payload, "Data mismatch");
+    println!("rebuilt the transaction list from {data_shards} of {total} shreds");
 
     Ok(())
 }
