@@ -80,3 +80,55 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::seq::SliceRandom;
+    use reed_solomon_erasure::galois_8::ReedSolomon;
+
+    // builds the encoder + encodes a payload into pshreds
+    fn encode_payload(payload: &[u8]) -> (ReedSolomon, Vec<Vec<u8>>, usize) {
+        let rs = ReedSolomon::new(64, 192).unwrap();
+        let data_shards = rs.data_shard_count();
+        let shard_len = payload.len().div_ceil(data_shards);
+        let padded_len = shard_len * data_shards;
+        let mut buf = payload.to_vec();
+        buf.resize(padded_len, 0);
+        let mut pshreds: Vec<Vec<u8>> = buf.chunks(shard_len).map(|c| c.to_vec()).collect();
+        pshreds.extend((0..rs.parity_shard_count()).map(|_| vec![0u8; shard_len]));
+        rs.encode(&mut pshreds).unwrap();
+        (rs, pshreds, payload.len())
+    }
+
+    #[test]
+    fn recover_from_any_64_shreds() {
+        let payload: &[u8] = b"tx1: alice->bob 5 SOL; tx2: carol->dave 1 SOL; tx3: bob->erin 2 SOL";
+
+        for trial in 0..100 {
+            let (rs, pshreds, payload_len) = encode_payload(payload);
+
+            let data = rs.data_shard_count();
+            let parity = rs.parity_shard_count();
+            let total = data + parity;
+
+            // drop a RANDOM `parity` shreds, leaving exactly `data` survivors
+            let mut received: Vec<Option<Vec<u8>>> = pshreds.into_iter().map(Some).collect();
+            let mut idx: Vec<usize> = (0..total).collect();
+            idx.shuffle(&mut rand::thread_rng());
+            for &i in idx.iter().take(parity) {
+                received[i] = None;
+            }
+
+            // reconstruct must succeed
+            rs.reconstruct(&mut received)
+                .unwrap_or_else(|e| panic!("trial {trial}: reconstruct failed: {e}"));
+
+            // reassemble and check it matches the original
+            let recovered: Vec<Vec<u8>> = received.into_iter().map(|s| s.unwrap()).collect();
+            let mut bytes: Vec<u8> = recovered[..data].concat();
+            bytes.truncate(payload_len);
+
+            assert_eq!(bytes, payload, "trial {trial}: recovered data mismatch");
+        }
+    }
+}
