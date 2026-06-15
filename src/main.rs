@@ -54,6 +54,14 @@ fn main() -> Result<()> {
     let held = received.iter().filter(|s| s.is_some()).count();
     println!("fanned out {total} pshreds; attester holds {held} (need >= {data_shards})");
 
+    // Map of which shreds survived: '#' = held, '.' = lost. With random loss the
+    // holes are scattered, not one contiguous block.
+    let map: String = received
+        .iter()
+        .map(|s| if s.is_some() { '#' } else { '.' })
+        .collect();
+    println!("\n shred map (# held, . lost):\n{map}");
+
     // RECONSTRUCT: rebuild the full pshred set from whatever arrived.
     rs.reconstruct(&mut received)?;
     let recovered: Vec<Vec<u8>> = received.into_iter().map(|s| s.unwrap()).collect();
@@ -64,7 +72,7 @@ fn main() -> Result<()> {
     bytes.truncate(payload.len());
 
     // Print the actual reconstructed data and compare it to what we sent.
-    println!("sent      T : {:?}", String::from_utf8_lossy(payload));
+    println!("\nsent      T : {:?}", String::from_utf8_lossy(payload));
     println!("recovered T : {:?}", String::from_utf8_lossy(&bytes));
 
     let same = bytes == payload;
