@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rand::seq::SliceRandom;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 
 fn main() -> Result<()> {
@@ -40,12 +41,18 @@ fn main() -> Result<()> {
     // RECEIVED: an attester only sees a subset. None = that shred never arrived.
     // Drop the max we can (the parity count), leaving exactly `data_shards`.
     let mut received: Vec<Option<Vec<u8>>> = pshreds.into_iter().map(Some).collect();
-    for slot in received.iter_mut().take(parity_shards) {
-        *slot = None;
+
+    // Lose `parity_shards` shreds at RANDOM, scattered positions (like real
+    // network loss) instead of a contiguous block. Shuffle all indices and drop
+    // the first `parity_shards` of them, so exactly `data_shards` survive.
+    let mut idx: Vec<usize> = (0..total).collect();
+    idx.shuffle(&mut rand::thread_rng());
+
+    for &i in idx.iter().take(parity_shards) {
+        received[i] = None;
     }
     let held = received.iter().filter(|s| s.is_some()).count();
     println!("fanned out {total} pshreds; attester holds {held} (need >= {data_shards})");
-
 
     // RECONSTRUCT: rebuild the full pshred set from whatever arrived.
     rs.reconstruct(&mut received)?;
